@@ -341,6 +341,9 @@ func (c *Client) createNewWellKnownRoutes(ctx context.Context, interestingRoutes
 			APIVersion: "v1",
 			Metadata: ObjectMeta{
 				Name: fmt.Sprintf("%s-wkr", name),
+				Annotations: map[string]string{
+					"openshiftle.lukegb.com/maps-to": name,
+				},
 			},
 			Spec: RouteSpec{
 				Host: route.Spec.Host,
