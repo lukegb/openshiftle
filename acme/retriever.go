@@ -117,10 +117,9 @@ func (a *Retriever) authorize(ctx context.Context, hostname string) error {
 				return err
 			}
 
-			isReady := false
 			retryTime := retryStartInterval
 			attempts := 0
-			for !isReady {
+			for {
 				glog.Infof("%s: attempting to retrieve %s to verify content (attempt %d)", hostname, challengeURL, attempts+1)
 				resp, err := http.Get(fmt.Sprintf("http://%s%s", hostname, a.Client.HTTP01ChallengePath(chal.Token)))
 				if err != nil {
@@ -131,9 +130,12 @@ func (a *Retriever) authorize(ctx context.Context, hostname string) error {
 				if err != nil {
 					return err
 				}
-				if string(b) != expectResponse {
-					glog.Infof("%s: unexpected response %q", hostname, string(b))
+				if string(b) == expectResponse {
+					// success!
+					glog.Infof("%s: successfully retrieve challenge token", hostname)
+					break
 				}
+				glog.Infof("%s: unexpected response %q", hostname, string(b))
 
 				attempts = attempts + 1
 				if attempts >= maxAttempts {
@@ -143,7 +145,7 @@ func (a *Retriever) authorize(ctx context.Context, hostname string) error {
 
 				thisRetryTime := retryTime + time.Duration(float64(retryJitter)*2*mathrand.Float64()) - retryJitter
 				retryTime = retryTime * 2
-				glog.Infof("%s: retrying in %s", thisRetryTime.String())
+				glog.Infof("%s: retrying in %s", hostname, thisRetryTime.String())
 				time.Sleep(thisRetryTime)
 			}
 
