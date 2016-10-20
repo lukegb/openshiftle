@@ -26,7 +26,7 @@ var (
 	tokenPath = flag.String("token-path", "/var/run/secrets/kubernetes.io/serviceaccount/token", "Path to file containing OpenShift API token. Default to service account.")
 
 	apiURL    = flag.String("api-url", "https://kubernetes.default.svc.cluster.local", "URL to root of OpenShift REST API.")
-	apiCAPath = flag.String("api-ca-path", "/run/kubernetes.io/serviceaccount/service-ca.crt", "Path to CA to trust for OpenShift REST API. If empty, the default CA store is used.")
+	apiCAPath = flag.String("api-ca-path", "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt", "Path to CA to trust for OpenShift REST API. If empty, the default CA store is used.")
 	namespace = flag.String("namespace", os.Getenv("OPENSHIFTLE_NAMESPACE"), "Namespace to acquire certificates for. Must be provided.")
 
 	acmeURL = flag.String("acme-url", envOrDefault("OPENSHIFTLE_ACME_URL", "https://acme-staging.api.letsencrypt.org/directory"), "URL to ACME CA to issue certificates from.")
