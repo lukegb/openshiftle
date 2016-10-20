@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/golang/glog"
@@ -26,16 +27,24 @@ var (
 
 	apiURL    = flag.String("api-url", "https://kubernetes.default.svc.cluster.local", "URL to root of OpenShift REST API.")
 	apiCAPath = flag.String("api-ca-path", "/run/kubernetes.io/serviceaccount/service-ca.crt", "Path to CA to trust for OpenShift REST API. If empty, the default CA store is used.")
-	namespace = flag.String("namespace", "", "Namespace to acquire certificates for. Must be provided.")
+	namespace = flag.String("namespace", os.Getenv("OPENSHIFTLE_NAMESPACE"), "Namespace to acquire certificates for. Must be provided.")
 
-	acmeURL = flag.String("acme-url", "https://acme-staging.api.letsencrypt.org/directory", "URL to ACME CA to issue certificates from.")
-	keyPath = flag.String("acme-key-path", "", "Path to key used for authenticating against ACME. Will be generated automatically if empty.")
+	acmeURL = flag.String("acme-url", envOrDefault("OPENSHIFTLE_ACME_URL", "https://acme-staging.api.letsencrypt.org/directory"), "URL to ACME CA to issue certificates from.")
+	keyPath = flag.String("acme-key-path", os.Getenv("OPENSHIFTLE_ACME_KEY_PATH"), "Path to key used for authenticating against ACME. Will be generated automatically if empty.")
 
 	port        = flag.Int("port", 9000, "HTTP port to perform HTTP challenge responses on.")
-	serviceName = flag.String("service-name", "", "Service to route HTTP challenge responses to. Ensure that this is routed to the port above.")
+	serviceName = flag.String("service-name", os.Getenv("OPENSHIFTLE_SERVICE_NAME"), "Service to route HTTP challenge responses to. Ensure that this is routed to the port above.")
 
 	rerunInterval = flag.Duration("rerun-interval", 10*time.Minute, "Interval at which to check if certificates need issuance.")
 )
+
+func envOrDefault(env, def string) string {
+	v := os.Getenv(env)
+	if v == "" {
+		return def
+	}
+	return v
+}
 
 const (
 	generatedKeySize = 2048 // bits of RSA key
