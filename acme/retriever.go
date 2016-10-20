@@ -26,9 +26,9 @@ const (
 	httpChallenge         = "http-01" // ACME challenge identifier for HTTP-01
 	certificateRsaKeySize = 2048
 
-	retryStartInterval = 1 * time.Second  // time between requests to self to allow router to settle
-	retryMaxInterval   = 60 * time.Second // time to cap requests out
-	retryJitter        = 5 * time.Second  // maximum +/- jitter to apply
+	retryStartInterval = 1 * time.Minute // time between requests to self to allow router to settle
+	retryMaxInterval   = 5 * time.Minute // time to cap requests out
+	retryJitter        = 5 * time.Second // maximum +/- jitter to apply
 
 	maxAttempts = 30 // attempts to try to retrieve challenge token from self before giving up
 )
@@ -110,6 +110,9 @@ func (a *Retriever) authorize(ctx context.Context, hostname string) error {
 		}
 		a.responseMu.Unlock()
 
+		glog.Infof("%s: waiting for %s to allow router to settle", hostname, retryStartInterval.String())
+		time.Sleep(retryStartInterval)
+
 		for _, chal := range validChallenges {
 			challengeURL := fmt.Sprintf("http://%s%s", hostname, a.Client.HTTP01ChallengePath(chal.Token))
 			expectResponse, err := a.Client.HTTP01ChallengeResponse(chal.Token)
@@ -145,6 +148,9 @@ func (a *Retriever) authorize(ctx context.Context, hostname string) error {
 
 				thisRetryTime := retryTime + time.Duration(float64(retryJitter)*2*mathrand.Float64()) - retryJitter
 				retryTime = retryTime * 2
+				if retryTime > retryMaxInterval {
+					retryTime = retryMaxInterval
+				}
 				glog.Infof("%s: retrying in %s", hostname, thisRetryTime.String())
 				time.Sleep(thisRetryTime)
 			}
