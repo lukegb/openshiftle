@@ -10,6 +10,8 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	mathrand "math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -23,6 +25,12 @@ import (
 const (
 	httpChallenge         = "http-01" // ACME challenge identifier for HTTP-01
 	certificateRsaKeySize = 2048
+
+	retryStartInterval = 1 * time.Second  // time between requests to self to allow router to settle
+	retryMaxInterval   = 60 * time.Second // time to cap requests out
+	retryJitter        = 5 * time.Second  // maximum +/- jitter to apply
+
+	maxAttempts = 30 // attempts to try to retrieve challenge token from self before giving up
 )
 
 // Retriever retrieves TLS certificates from an ACME host using the HTTP-01 challenge on a given port.
@@ -91,6 +99,7 @@ func (a *Retriever) authorize(ctx context.Context, hostname string) error {
 			return fmt.Errorf("unable to find valid combination of challenges")
 		}
 
+		glog.Infof("%s: setting up challenges", hostname)
 		a.responseMu.Lock()
 		for _, chal := range validChallenges {
 			resp, err := a.Client.HTTP01ChallengeResponse(chal.Token)
@@ -102,6 +111,42 @@ func (a *Retriever) authorize(ctx context.Context, hostname string) error {
 		a.responseMu.Unlock()
 
 		for _, chal := range validChallenges {
+			challengeURL := fmt.Sprintf("http://%s%s", hostname, a.Client.HTTP01ChallengePath(chal.Token))
+			expectResponse, err := a.Client.HTTP01ChallengeResponse(chal.Token)
+			if err != nil {
+				return err
+			}
+
+			isReady := false
+			retryTime := retryStartInterval
+			attempts := 0
+			for !isReady {
+				glog.Infof("%s: attempting to retrieve %s to verify content (attempt %d)", hostname, challengeURL, attempts+1)
+				resp, err := http.Get(fmt.Sprintf("http://%s%s", hostname, a.Client.HTTP01ChallengePath(chal.Token)))
+				if err != nil {
+					return err
+				}
+				defer resp.Body.Close()
+				b, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					return err
+				}
+				if string(b) != expectResponse {
+					glog.Infof("%s: unexpected response %q", hostname, string(b))
+				}
+
+				attempts = attempts + 1
+				if attempts >= maxAttempts {
+					glog.Infof("%s: exceed max attempts, giving up.", hostname)
+					return fmt.Errorf("failed to retrieve challenge token from self within %d tries", maxAttempts)
+				}
+
+				thisRetryTime := retryTime + time.Duration(float64(retryJitter)*2*mathrand.Float64()) - retryJitter
+				retryTime = retryTime * 2
+				glog.Infof("%s: retrying in %s", thisRetryTime.String())
+				time.Sleep(thisRetryTime)
+			}
+
 			if _, err := a.Client.Accept(ctx, chal); err != nil {
 				return err
 			}
