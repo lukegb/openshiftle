@@ -22,6 +22,11 @@ type RouteCertificatePatch struct {
 			CACertificate string `json:"caCertificate"`
 		} `json:"tls"`
 	} `json:"spec"`
+	Metadata struct {
+		Annotations struct {
+			OpenShiftLEEnabled string `json:"openshiftle.lukegb.com/enabled"`
+		} `json:"annotations"`
+	} `json:"metadata"`
 }
 
 // ListMeta encodes the metadata for a grouping of items.

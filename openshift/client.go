@@ -20,6 +20,12 @@ import (
 
 const (
 	expiryTime = 30 * 24 * time.Hour // roughly one month
+
+	annotationNeedsSSL  = "openshiftle.lukegb.com/enabled"
+	annotationWKRMapsTo = "openshiftle.lukegb.com/maps-to"
+
+	annotationValueForce = "force" // if annotationNeedsSSL contains this string, then this certificate is considered stale immediately
+	annotationValueOn    = "true"
 )
 
 // Client uses the OpenShift API to manage the TLS certificates for routes in the provided namespace with the provided token.
@@ -127,7 +133,7 @@ func (c *Client) Run(ctx context.Context, targetService string, issueCertificate
 	}
 
 	interestingRoutes := filterRoutes(routes, func(r Route) string {
-		if r.Metadata.Annotations["openshiftle.lukegb.com/enabled"] == "" {
+		if r.Metadata.Annotations[annotationNeedsSSL] == "" {
 			glog.Infof("Route %q is not enabled for openshiftle, ignoring.", r.Metadata.Name)
 			return ""
 		}
@@ -139,7 +145,7 @@ func (c *Client) Run(ctx context.Context, targetService string, issueCertificate
 		return r.Metadata.Name
 	})
 	wellKnownRoutes := filterRoutes(routes, func(r Route) string {
-		return r.Metadata.Annotations["openshiftle.lukegb.com/maps-to"]
+		return r.Metadata.Annotations[annotationWKRMapsTo]
 	})
 
 	if err := c.deleteStaleRoutes(ctx, interestingRoutes, wellKnownRoutes); err != nil {
@@ -226,6 +232,7 @@ func (c *Client) setCertificatesForRoutes(ctx context.Context, routes map[string
 	patch.Spec.TLS.Certificate = string(certPEM)
 	patch.Spec.TLS.Key = string(keyPEM)
 	patch.Spec.TLS.CACertificate = strings.Join(chainPEMStrings, "")
+	patch.Metadata.Annotations.OpenShiftLEEnabled = annotationValueOn
 
 	// TODO: CA certificate, but we'll assume it's correct for now...
 	for name, route := range routes {
@@ -248,6 +255,11 @@ func mustReissue(routes map[string]Route) (bool, error) {
 	for routeName, route := range routes {
 		if route.Spec.TLS == nil {
 			// if there's no cert, then obviously we need to issue a new one
+			return true, nil
+		}
+
+		if route.Metadata.Annotations[annotationNeedsSSL] == annotationValueForce {
+			glog.Infof("%s has %q annotation set to %q!", routeName, annotationNeedsSSL, annotationValueForce)
 			return true, nil
 		}
 
