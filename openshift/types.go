@@ -16,9 +16,10 @@ type RouteTargetPatch struct {
 type RouteCertificatePatch struct {
 	Spec struct {
 		TLS struct {
-			Termination string `json:"termination"`
-			Certificate string `json:"certificate"`
-			Key         string `json:"key"`
+			Termination   string `json:"termination"`
+			Certificate   string `json:"certificate"`
+			Key           string `json:"key"`
+			CACertificate string `json:"caCertificate"`
 		} `json:"tls"`
 	} `json:"spec"`
 }

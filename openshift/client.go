@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -119,7 +120,7 @@ func (c *Client) createRoute(ctx context.Context, route Route) error {
 }
 
 // Run performs a single check-actuate loop on Client.
-func (c *Client) Run(ctx context.Context, targetService string, issueCertificate func(ctx context.Context, hostnames []string) (*x509.Certificate, crypto.Signer, error)) error {
+func (c *Client) Run(ctx context.Context, targetService string, issueCertificate func(ctx context.Context, hostnames []string) (*x509.Certificate, crypto.Signer, []*x509.Certificate, error)) error {
 	routes, err := c.getRoutes(ctx)
 	if err != nil {
 		return err
@@ -166,14 +167,14 @@ func (c *Client) Run(ctx context.Context, targetService string, issueCertificate
 	hostnames := computeHostnames(interestingRoutes)
 	glog.Info("Requesting certificates for hostnames: %v", hostnames)
 
-	cert, privkey, err := issueCertificate(ctx, hostnames)
+	cert, privkey, chain, err := issueCertificate(ctx, hostnames)
 	if err != nil {
 		glog.Errorf("issueCertificate: failed to issue certificates for %v: %v", hostnames, err)
 		return err
 	}
 
 	glog.Info("Certificate issued!")
-	if err := c.setCertificatesForRoutes(ctx, interestingRoutes, cert, privkey); err != nil {
+	if err := c.setCertificatesForRoutes(ctx, interestingRoutes, cert, privkey, chain); err != nil {
 		glog.Errorf("setCertificatesForRoutes: failed to set certificates: %v", err)
 		return err
 	}
@@ -195,12 +196,20 @@ func signerToBytes(privkey crypto.Signer) ([]byte, string, error) {
 	return nil, "", fmt.Errorf("unknown private key %#v", privkey)
 }
 
-func (c *Client) setCertificatesForRoutes(ctx context.Context, routes map[string]Route, cert *x509.Certificate, privkey crypto.Signer) error {
+func (c *Client) setCertificatesForRoutes(ctx context.Context, routes map[string]Route, cert *x509.Certificate, privkey crypto.Signer, chain []*x509.Certificate) error {
 	// Convert certificate into friendly form
 	certPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: cert.Raw,
 	})
+
+	var chainPEMStrings []string
+	for _, caCert := range chain {
+		chainPEMStrings = append(chainPEMStrings, string(pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: caCert.Raw,
+		})))
+	}
 
 	// Convert key to PEM too
 	keyASN1Bytes, keyPEMHeader, err := signerToBytes(privkey)
@@ -216,6 +225,7 @@ func (c *Client) setCertificatesForRoutes(ctx context.Context, routes map[string
 	patch.Spec.TLS.Termination = "edge"
 	patch.Spec.TLS.Certificate = string(certPEM)
 	patch.Spec.TLS.Key = string(keyPEM)
+	patch.Spec.TLS.CACertificate = strings.Join(chainPEMStrings, "")
 
 	// TODO: CA certificate, but we'll assume it's correct for now...
 	for name, route := range routes {

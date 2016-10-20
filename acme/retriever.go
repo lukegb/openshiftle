@@ -137,7 +137,7 @@ func generateCSR(hostnames []string) ([]byte, crypto.Signer, error) {
 	return csr, privkey, nil
 }
 
-func validCert(hostnames []string, der [][]byte, key crypto.Signer) (leaf *x509.Certificate, err error) {
+func validCert(hostnames []string, der [][]byte, key crypto.Signer) (leaf *x509.Certificate, chain []*x509.Certificate, err error) {
 	// parse public part(s)
 	var n int
 	for _, b := range der {
@@ -150,20 +150,20 @@ func validCert(hostnames []string, der [][]byte, key crypto.Signer) (leaf *x509.
 	}
 	x509Cert, err := x509.ParseCertificates(pub)
 	if len(x509Cert) == 0 {
-		return nil, errors.New("no public key found")
+		return nil, nil, errors.New("no public key found")
 	}
 	// verify the leaf is not expired and matches the domain name
 	leaf = x509Cert[0]
 	now := time.Now()
 	if now.Before(leaf.NotBefore) {
-		return nil, errors.New("certificate is not valid yet")
+		return nil, nil, errors.New("certificate is not valid yet")
 	}
 	if now.After(leaf.NotAfter) {
-		return nil, errors.New("expired certificate")
+		return nil, nil, errors.New("expired certificate")
 	}
 	for _, domain := range hostnames {
 		if err := leaf.VerifyHostname(domain); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	// ensure the leaf corresponds to the private key
@@ -171,27 +171,27 @@ func validCert(hostnames []string, der [][]byte, key crypto.Signer) (leaf *x509.
 	case *rsa.PublicKey:
 		prv, ok := key.(*rsa.PrivateKey)
 		if !ok {
-			return nil, errors.New("private key type does not match public key type")
+			return nil, nil, errors.New("private key type does not match public key type")
 		}
 		if pub.N.Cmp(prv.N) != 0 {
-			return nil, errors.New("private key does not match public key")
+			return nil, nil, errors.New("private key does not match public key")
 		}
 	case *ecdsa.PublicKey:
 		prv, ok := key.(*ecdsa.PrivateKey)
 		if !ok {
-			return nil, errors.New("private key type does not match public key type")
+			return nil, nil, errors.New("private key type does not match public key type")
 		}
 		if pub.X.Cmp(prv.X) != 0 || pub.Y.Cmp(prv.Y) != 0 {
-			return nil, errors.New("private key does not match public key")
+			return nil, nil, errors.New("private key does not match public key")
 		}
 	default:
-		return nil, errors.New("unknown public key algorithm")
+		return nil, nil, errors.New("unknown public key algorithm")
 	}
-	return leaf, nil
+	return leaf, x509Cert[1:], nil
 }
 
 // GetCertificate issues a certificate for the given set of hostnames, and will attempt to verify ownership of any hostnames which are not already verified.
-func (a *Retriever) GetCertificate(ctx context.Context, hostnames []string) (*x509.Certificate, crypto.Signer, error) {
+func (a *Retriever) GetCertificate(ctx context.Context, hostnames []string) (*x509.Certificate, crypto.Signer, []*x509.Certificate, error) {
 	// authorize all hostnames
 	var g errgroup.Group
 	for _, hostname := range hostnames {
@@ -204,24 +204,24 @@ func (a *Retriever) GetCertificate(ctx context.Context, hostnames []string) (*x5
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	csr, privkey, err := generateCSR(hostnames)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	der, _, err := a.Client.CreateCert(ctx, csr, 0, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	leaf, err := validCert(hostnames, der, privkey)
+	leaf, chain, err := validCert(hostnames, der, privkey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return leaf, privkey, nil
+	return leaf, privkey, chain, nil
 }
 
 // ListenAndServe listens on the provided port. It will only do anything the first time it is called on a given retriever.

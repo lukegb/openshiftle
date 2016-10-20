@@ -121,6 +121,7 @@ func httpClientWithCAFromPath(caPath string) (*http.Client, error) {
 }
 
 func main() {
+	flag.Set("logtostderr", "true")
 	flag.Parse()
 
 	glog.Info("Starting up...")
