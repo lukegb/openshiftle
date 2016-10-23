@@ -253,7 +253,7 @@ func mustReissue(routes map[string]Route) (bool, error) {
 	// 2) we're within expiryTime
 	// if either of these cases are true, we will issue a new certificate covering ALL domains
 	for routeName, route := range routes {
-		if route.Spec.TLS == nil {
+		if route.Spec.TLS == nil || len(route.Spec.TLS.Certificate) == 0 {
 			// if there's no cert, then obviously we need to issue a new one
 			return true, nil
 		}
